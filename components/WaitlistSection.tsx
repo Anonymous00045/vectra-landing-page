@@ -1,10 +1,23 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import WaitlistForm from './WaitlistForm';
+import { getWaitlistStats } from '../lib/api';
 
 const WaitlistSection: React.FC = () => {
-  const target = 5000;
-  const current = 3420;
-  const progress = (current / target) * 100;
+  const [stats, setStats] = useState({ count: 3420, total: 5000 });
+
+  useEffect(() => {
+    // Fetch initial stats
+    getWaitlistStats().then(setStats);
+    
+    // Optional: Poll for updates
+    const interval = setInterval(() => {
+        getWaitlistStats().then(setStats);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const progress = Math.min((stats.count / stats.total) * 100, 100);
 
   return (
     <section id="waitlist" className="py-24 bg-slate-950 flex flex-col items-center justify-center relative overflow-hidden">
@@ -23,7 +36,7 @@ const WaitlistSection: React.FC = () => {
           <div className="mt-8">
             <div className="flex justify-between text-sm font-medium text-slate-400 mb-2">
               <span>Progress to Beta</span>
-              <span>{current.toLocaleString()} / {target.toLocaleString()} joined</span>
+              <span>{stats.count.toLocaleString()} / {stats.total.toLocaleString()} joined</span>
             </div>
             <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
               <div 

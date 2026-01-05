@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
+import { joinWaitlist } from '../lib/api';
 
 interface WaitlistFormProps {
   location?: 'hero' | 'footer';
@@ -7,7 +8,8 @@ interface WaitlistFormProps {
 
 const WaitlistForm: React.FC<WaitlistFormProps> = ({ location = 'hero' }) => {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const joined = localStorage.getItem('vectra_waitlist_joined');
@@ -16,18 +18,28 @@ const WaitlistForm: React.FC<WaitlistFormProps> = ({ location = 'hero' }) => {
     }
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
     
     setStatus('loading');
+    setError('');
     
-    // Simulate API call and persist state
-    setTimeout(() => {
-      setStatus('success');
-      setEmail('');
-      localStorage.setItem('vectra_waitlist_joined', 'true');
-    }, 1500);
+    try {
+      const result = await joinWaitlist(email);
+      
+      if (result.success) {
+        setStatus('success');
+        setEmail('');
+        localStorage.setItem('vectra_waitlist_joined', 'true');
+      } else {
+        setStatus('error');
+        setError(result.message || 'Failed to join');
+      }
+    } catch (err) {
+      setStatus('error');
+      setError('Connection error');
+    }
   };
 
   if (status === 'success') {
@@ -48,7 +60,7 @@ const WaitlistForm: React.FC<WaitlistFormProps> = ({ location = 'hero' }) => {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={status === 'loading'}
-          className={`w-full bg-slate-900/80 border border-slate-700 text-white placeholder-slate-500 rounded-full py-3.5 pl-6 pr-36 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all ${location === 'hero' ? 'h-14' : 'h-12'}`}
+          className={`w-full bg-slate-900/80 border ${status === 'error' ? 'border-red-500' : 'border-slate-700'} text-white placeholder-slate-500 rounded-full py-3.5 pl-6 pr-36 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all ${location === 'hero' ? 'h-14' : 'h-12'}`}
           required
         />
         <button
@@ -66,7 +78,12 @@ const WaitlistForm: React.FC<WaitlistFormProps> = ({ location = 'hero' }) => {
           )}
         </button>
       </div>
-      {location === 'hero' && (
+      {status === 'error' && (
+        <div className="absolute -bottom-6 left-6 text-xs text-red-400">
+           {error}
+        </div>
+      )}
+      {location === 'hero' && status !== 'error' && (
         <div className="absolute -bottom-6 left-6 text-xs text-slate-500">
           Join 2,000+ developers waiting for access.
         </div>

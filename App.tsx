@@ -18,6 +18,7 @@ import {
 import { Particles } from './components/Particles';
 import { Footer } from './components/Footer';
 import ProblemSolution from './components/ProblemSolution';
+import { joinWaitlist, getWaitlistStats } from './lib/api';
 
 // --- Components ---
 
@@ -152,21 +153,15 @@ const InterfaceMockup = () => {
   const [activeTab, setActiveTab] = useState(0);
   const tabs = ['Builder', 'Code', 'Preview'];
   
-  // Auto-rotate only if user hasn't interacted recently? 
-  // For simplicity, keeping the interval but pausing on hover could be a future enhancement.
   useEffect(() => {
     const interval = setInterval(() => {
       setActiveTab((prev) => (prev + 1) % 3);
-    }, 5000); // Slowed down slightly for accessibility reading time
+    }, 5000); 
     return () => clearInterval(interval);
   }, []);
 
   return (
     <div id="demo" className="w-full max-w-5xl mx-auto mt-16 perspective-1000 scroll-mt-32" aria-hidden="true">
-      {/* 
-         aria-hidden="true" because this is a complex visual simulation/decoration. 
-         Real content is described in text. 
-      */}
       <div className="relative bg-zinc-900 rounded-[28px] border border-zinc-800 shadow-2xl overflow-hidden transform rotate-x-2 transition-all duration-700 hover:rotate-0 ring-1 ring-white/5">
         
         <div className="h-14 bg-zinc-900 border-b border-zinc-800 flex items-center px-6 justify-between">
@@ -458,32 +453,36 @@ const Features = () => {
 
 const Waitlist = () => {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
-  const [count, setCount] = useState(2481);
-  const MAX_SPOTS = 3500; // Capacity
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [count, setCount] = useState(0);
+  const [total, setTotal] = useState(5000);
 
   useEffect(() => {
-    // Load persisted state
+    // Check if user already joined locally
     const saved = localStorage.getItem("vectra_waitlist_joined");
     if (saved === "true") {
       setStatus("success");
     }
 
+    // Load initial stats from Cloud/API
+    getWaitlistStats().then(stats => {
+      setCount(stats.count);
+      setTotal(stats.total);
+    });
+
     const interval = setInterval(() => {
-      // Randomly increment count occasionally to simulate activity
-      if (Math.random() > 0.6) {
-          setCount(prev => {
-              const newCount = prev + Math.floor(Math.random() * 3) + 1;
-              return Math.min(newCount, MAX_SPOTS);
-          });
-      }
-    }, 2000);
+        // Poll for updates (or simulate live updates)
+        getWaitlistStats().then(stats => {
+            setCount(stats.count);
+        });
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  const percentage = Math.min(Math.round((count / MAX_SPOTS) * 100), 100);
+  const percentage = Math.min(Math.round((count / total) * 100), 100);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
 
@@ -495,12 +494,26 @@ const Waitlist = () => {
     }
 
     setStatus("loading");
-    setTimeout(() => {
-      setStatus("success");
-      setEmail("");
-      localStorage.setItem("vectra_waitlist_joined", "true");
-      setCount(prev => Math.min(prev + 1, MAX_SPOTS));
-    }, 1500);
+    setErrorMessage("");
+
+    try {
+        const result = await joinWaitlist(email);
+        
+        if (result.success) {
+            setStatus("success");
+            setEmail("");
+            localStorage.setItem("vectra_waitlist_joined", "true");
+            if (result.stats) {
+                setCount(result.stats.count);
+            }
+        } else {
+            setStatus("error");
+            setErrorMessage(result.message || "Something went wrong.");
+        }
+    } catch (err) {
+        setStatus("error");
+        setErrorMessage("Network error. Please try again later.");
+    }
   };
 
   return (
@@ -554,35 +567,40 @@ const Waitlist = () => {
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1 group">
-                <input 
-                  id="waitlist-email"
-                  type="email" 
-                  placeholder=" " 
-                  className="peer w-full px-6 py-4 bg-zinc-800 border-b-2 border-zinc-600 rounded-t-xl text-zinc-100 placeholder-transparent focus:outline-none focus:border-indigo-300 focus:bg-zinc-700 focus-visible:ring-2 focus-visible:ring-indigo-400 transition-all disabled:opacity-50"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={status === "loading"}
-                  required
-                />
-                <label 
-                  htmlFor="waitlist-email"
-                  className="absolute left-6 top-4 text-zinc-400 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-1 peer-focus:text-xs peer-focus:text-indigo-300 -translate-y-0 peer-focus:-translate-y-0 pointer-events-none"
-                >
-                    Email address
-                </label>
-            </div>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1 group text-left">
+                    <input 
+                    id="waitlist-email"
+                    type="email" 
+                    placeholder=" " 
+                    className="peer w-full px-6 py-4 bg-zinc-800 border-b-2 border-zinc-600 rounded-t-xl text-zinc-100 placeholder-transparent focus:outline-none focus:border-indigo-300 focus:bg-zinc-700 focus-visible:ring-2 focus-visible:ring-indigo-400 transition-all disabled:opacity-50"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={status === "loading"}
+                    required
+                    />
+                    <label 
+                    htmlFor="waitlist-email"
+                    className="absolute left-6 top-4 text-zinc-400 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-1 peer-focus:text-xs peer-focus:text-indigo-300 -translate-y-0 peer-focus:-translate-y-0 pointer-events-none"
+                    >
+                        Email address
+                    </label>
+                </div>
 
-            <button 
-              type="submit" 
-              disabled={status === "loading"}
-              className="px-8 py-4 bg-indigo-300 hover:bg-indigo-200 text-indigo-950 font-medium rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[140px] shadow-sm hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
-            >
-              {status === "loading" ? (
-                <Loader2 className="animate-spin w-5 h-5 text-indigo-950" />
-              ) : "Get Access"}
-            </button>
+                <button 
+                type="submit" 
+                disabled={status === "loading"}
+                className="px-8 py-4 bg-indigo-300 hover:bg-indigo-200 text-indigo-950 font-medium rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[140px] shadow-sm hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+                >
+                {status === "loading" ? (
+                    <Loader2 className="animate-spin w-5 h-5 text-indigo-950" />
+                ) : "Get Access"}
+                </button>
+            </div>
+            {status === 'error' && (
+                <div className="text-red-400 text-sm bg-red-900/10 p-2 rounded border border-red-900/20">{errorMessage}</div>
+            )}
           </form>
         )}
       </div>
